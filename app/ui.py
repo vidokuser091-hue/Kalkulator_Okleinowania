@@ -16,12 +16,12 @@ class CalculatorUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Kalkulator Okleinowania")
-        self.root.geometry("1100x750")
+        self.root.geometry("1200x800")
         self.root.resizable(True, True)
         
         self.calculator = OkleinowanieCalculator()
         self.current_file = None
-        self.item_to_profil = {}  # Mapowanie item_id -> nazwa profilu
+        self.checkbox_buttons = {}  # Przechowuje przyciski checkboxów
         
         # Style
         style = ttk.Style()
@@ -76,33 +76,31 @@ class CalculatorUI:
         
         ttk.Button(button_frame, text="✓ Zaznacz wszystko", command=self._select_all).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="✗ Odznacz wszystko", command=self._deselect_all).pack(side=tk.LEFT, padx=5)
-        ttk.Label(button_frame, text="(Kliknij na checkbox aby wybrać profil)", foreground="gray", font=("Arial", 9, "italic")).pack(side=tk.LEFT, padx=20)
+        ttk.Label(button_frame, text="(Kliknij przycisk w kolumnie 'Wybór' aby zaznaczać/odznaczać)", foreground="gray", font=("Arial", 9, "italic")).pack(side=tk.LEFT, padx=20)
         
-        # Tabelka z profilami
-        columns = ("Wybór", "Profil", "Długość (mm)", "Ilość", "mb", "Cena (zł)")
-        self.tree = ttk.Treeview(profiles_frame, columns=columns, height=15, show='headings')
+        # Frame z scrollbarem dla profili
+        self.profiles_container = ttk.Frame(profiles_frame)
+        self.profiles_container.grid(row=1, column=0, columnspan=7, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
         
-        # Definiuj kolumny
-        self.tree.column('Wybór', width=60, anchor=tk.CENTER)
-        self.tree.column('Profil', width=280, anchor=tk.W)
-        self.tree.column('Długość (mm)', width=110, anchor=tk.CENTER)
-        self.tree.column('Ilość', width=70, anchor=tk.CENTER)
-        self.tree.column('mb', width=80, anchor=tk.CENTER)
-        self.tree.column('Cena (zł)', width=100, anchor=tk.CENTER)
+        # Canvas i scrollbar dla dynamicznych checkboxów
+        self.canvas = tk.Canvas(self.profiles_container, height=300, bg="white", highlightthickness=0)
+        self.scrollbar = ttk.Scrollbar(self.profiles_container, orient=tk.VERTICAL, command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
         
-        # Nagłówki
-        for col in columns:
-            self.tree.heading(col, text=col)
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        self.tree.grid(row=1, column=0, columnspan=7, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        # Frame wewnątrz canvas dla profili
+        self.profiles_frame_inner = ttk.Frame(self.canvas)
+        self.canvas_window = self.canvas.create_window((0, 0), window=self.profiles_frame_inner, anchor="nw")
         
-        # Scrollbar
-        scrollbar = ttk.Scrollbar(profiles_frame, orient=tk.VERTICAL, command=self.tree.yview)
-        scrollbar.grid(row=1, column=7, sticky=(tk.N, tk.S))
-        self.tree.configure(yscroll=scrollbar.set)
+        # Bind mousewheel
+        self.canvas.bind("<MouseWheel>", self._on_mousewheel)
+        self.canvas.bind("<Button-4>", self._on_mousewheel)
+        self.canvas.bind("<Button-5>", self._on_mousewheel)
         
-        # Bind click do zaznaczania
-        self.tree.bind('<Button-1>', self._on_tree_click)
+        profiles_frame.columnconfigure(0, weight=1)
+        profiles_frame.rowconfigure(1, weight=1)
         
         # ========== SEKCJA WYNIKÓW ==========
         results_frame = ttk.LabelFrame(main_frame, text="Podsumowanie", padding="10")
@@ -121,8 +119,13 @@ class CalculatorUI:
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(0, weight=1)
         main_frame.rowconfigure(2, weight=1)
-        profiles_frame.columnconfigure(0, weight=1)
-        profiles_frame.rowconfigure(1, weight=1)
+    
+    def _on_mousewheel(self, event):
+        """Obsługa scrollowania myszką"""
+        if event.num == 5 or event.delta < 0:
+            self.canvas.yview_scroll(1, "units")
+        elif event.num == 4 or event.delta > 0:
+            self.canvas.yview_scroll(-1, "units")
     
     def _load_file(self):
         """Wczytaj plik Excel"""
@@ -138,66 +141,104 @@ class CalculatorUI:
             if self.calculator.load_from_excel(filepath):
                 self.current_file = filepath
                 self.file_label.config(text=f"Wczytano: {Path(filepath).name}", foreground="green")
-                self._refresh_profiles_table()
+                self._refresh_profiles_list()
             else:
                 messagebox.showwarning("Brak danych", "Plik nie zawiera profili z oznaczeniem RAL.")
         except Exception as e:
             messagebox.showerror("Błąd", f"Nie udało się wczytać pliku:\n{str(e)}")
     
-    def _refresh_profiles_table(self):
-        """Odśwież tabelę profili"""
-        # Wyczyść tabelę
-        for item in self.tree.get_children():
-            self.tree.delete(item)
+    def _refresh_profiles_list(self):
+        """Odśwież listę profili z checkboxami"""
+        # Wyczyść poprzednie checkboxy
+        for widget in self.profiles_frame_inner.winfo_children():
+            widget.destroy()
+        self.checkbox_buttons = {}
         
-        self.item_to_profil = {}
+        # Nagłówek
+        header_frame = ttk.Frame(self.profiles_frame_inner)
+        header_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Label(header_frame, text="Wybór", font=("Arial", 10, "bold"), width=8).pack(side=tk.LEFT, padx=5)
+        ttk.Label(header_frame, text="Profil", font=("Arial", 10, "bold"), width=35).pack(side=tk.LEFT, padx=5)
+        ttk.Label(header_frame, text="Długość (mm)", font=("Arial", 10, "bold"), width=12).pack(side=tk.LEFT, padx=5)
+        ttk.Label(header_frame, text="Ilość", font=("Arial", 10, "bold"), width=8).pack(side=tk.LEFT, padx=5)
+        ttk.Label(header_frame, text="mb", font=("Arial", 10, "bold"), width=10).pack(side=tk.LEFT, padx=5)
+        ttk.Label(header_frame, text="Cena (zł)", font=("Arial", 10, "bold"), width=12).pack(side=tk.LEFT, padx=5)
+        
+        # Separator
+        ttk.Separator(self.profiles_frame_inner, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=5)
         
         # Dodaj profile
         for profil in self.calculator.get_profiles():
-            mb = profil.get_mb()
-            checkbox_text = "☑" if profil.wybrany else "☐"
-            item_id = self.tree.insert('', 'end', values=(
-                checkbox_text,
-                profil.nazwa,
-                f"{profil.dlg_szt:.0f}",
-                profil.ilosc,
-                f"{mb:.2f}",
-                "0.00"
-            ))
-            self.item_to_profil[item_id] = profil.nazwa
+            self._add_profil_row(profil)
+        
+        # Update canvas scroll region
+        self.profiles_frame_inner.update_idletasks()
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
     
-    def _on_tree_click(self, event):
-        """Obsłuż klik na wiersz tabeli"""
-        item = self.tree.identify('item', event.x, event.y)
-        col = self.tree.identify_column(event.x, event.y)
+    def _add_profil_row(self, profil):
+        """Dodaj wiersz z profilem i checkboxem"""
+        row_frame = ttk.Frame(self.profiles_frame_inner)
+        row_frame.pack(fill=tk.X, padx=5, pady=2)
         
-        if not item:
-            return
+        # Przycisk checkbox
+        checkbox_btn = tk.Button(
+            row_frame,
+            text="☑" if profil.wybrany else "☐",
+            width=3,
+            font=("Arial", 14),
+            bg="lightgreen" if profil.wybrany else "lightcoral",
+            command=lambda p=profil: self._toggle_profil(p, checkbox_btn)
+        )
+        checkbox_btn.pack(side=tk.LEFT, padx=5)
+        self.checkbox_buttons[profil.nazwa] = checkbox_btn
         
-        # Tylko jeśli kliknięto na kolumnę "Wybór" (#1)
-        if col == '#1':
-            try:
-                if item in self.item_to_profil:
-                    profil_name = self.item_to_profil[item]
-                    profil = self.calculator.get_profil_by_name(profil_name)
-                    if profil:
-                        # Przełącz stan
-                        profil.wybrany = not profil.wybrany
-                        print(f"✓ Profil '{profil_name}' - {'ZAZNACZONY (BĘDZIE OKLEJANY)' if profil.wybrany else 'ODZNACZONY (POMINIĘTY)'}")
-                        self._refresh_profiles_table()
-            except Exception as e:
-                print(f"Błąd: {e}")
+        # Profil
+        ttk.Label(row_frame, text=profil.nazwa, width=35, anchor=tk.W).pack(side=tk.LEFT, padx=5)
+        
+        # Długość
+        ttk.Label(row_frame, text=f"{profil.dlg_szt:.0f}", width=12, anchor=tk.CENTER).pack(side=tk.LEFT, padx=5)
+        
+        # Ilość
+        ttk.Label(row_frame, text=f"{profil.ilosc}", width=8, anchor=tk.CENTER).pack(side=tk.LEFT, padx=5)
+        
+        # mb
+        ttk.Label(row_frame, text=f"{profil.get_mb():.2f}", width=10, anchor=tk.CENTER).pack(side=tk.LEFT, padx=5)
+        
+        # Cena (domyślnie 0)
+        cena_label = ttk.Label(row_frame, text="0.00", width=12, anchor=tk.CENTER)
+        cena_label.pack(side=tk.LEFT, padx=5)
+        
+        # Store reference do ceny
+        row_frame.cena_label = cena_label
+        row_frame.profil = profil
+    
+    def _toggle_profil(self, profil, button):
+        """Przełącz stan profilu"""
+        profil.wybrany = not profil.wybrany
+        button.config(
+            text="☑" if profil.wybrany else "☐",
+            bg="lightgreen" if profil.wybrany else "lightcoral"
+        )
+        status = "ZAZNACZONY (BĘDZIE OKLEJANY)" if profil.wybrany else "ODZNACZONY (POMINIĘTY)"
+        print(f"✓ Profil '{profil.nazwa}' - {status}")
     
     def _select_all(self):
         """Zaznacz wszystkie profile"""
         self.calculator.toggle_all(True)
-        self._refresh_profiles_table()
+        for profil in self.calculator.get_profiles():
+            if profil.nazwa in self.checkbox_buttons:
+                button = self.checkbox_buttons[profil.nazwa]
+                button.config(text="☑", bg="lightgreen")
         print("✓ Wszystkie profile zaznaczone - BĘDĄ OKLEJANE")
     
     def _deselect_all(self):
         """Odznacz wszystkie profile"""
         self.calculator.toggle_all(False)
-        self._refresh_profiles_table()
+        for profil in self.calculator.get_profiles():
+            if profil.nazwa in self.checkbox_buttons:
+                button = self.checkbox_buttons[profil.nazwa]
+                button.config(text="☐", bg="lightcoral")
         print("✗ Wszystkie profile odznaczone - BĘDĄ POMINIĘTE")
     
     def _on_dwustronne_changed(self):
@@ -220,19 +261,17 @@ class CalculatorUI:
             
             total, ceny_profili = self.calculator.calculate_total(kwota, dwustronne, wspolczynnik)
             
-            # Aktualizuj tabelę z cenami
-            for item in self.tree.get_children():
-                row_values = list(self.tree.item(item, 'values'))
-                if row_values:
-                    profil_name = row_values[1]
-                    if profil_name in ceny_profili:
-                        row_values[5] = f"{ceny_profili[profil_name]:.2f}"
-                        self.tree.item(item, values=row_values)
+            # Aktualizuj ceny w wierszach
+            for row_frame in self.profiles_frame_inner.winfo_children():
+                if hasattr(row_frame, 'profil'):
+                    profil = row_frame.profil
+                    if profil.nazwa in ceny_profili:
+                        row_frame.cena_label.config(text=f"{ceny_profili[profil.nazwa]:.2f}")
             
             # Aktualizuj cenę całkowitą
             self.total_label.config(text=f"{total:.2f} zł")
             
-            # Pokaż info ile profili obliczono
+            # Pokaż info
             zaznaczonych = sum(1 for p in self.calculator.get_profiles() if p.wybrany)
             print(f"\n✅ OBLICZONO: {zaznaczonych} profili do okleinowania")
             print(f"💰 Cena całkowita: {total:.2f} zł\n")
@@ -246,9 +285,9 @@ class CalculatorUI:
         self.dwustronne_var.set(False)
         self.wspolczynnik_var.set(0.5)
         self.total_label.config(text="0.00 zł")
-        for item in self.tree.get_children():
-            self.tree.delete(item)
         self.file_label.config(text="Brak wczytanego pliku", foreground="gray")
         self.current_file = None
         self.calculator = OkleinowanieCalculator()
-        self.item_to_profil = {}
+        self.checkbox_buttons = {}
+        for widget in self.profiles_frame_inner.winfo_children():
+            widget.destroy()
