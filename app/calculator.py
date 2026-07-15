@@ -106,6 +106,11 @@ class OkleinowanieCalculator:
                     if 'ral' not in color.lower():
                         continue
                     
+                    # Filtruj out profile które nie mają samego RAL (bez surowy, anodowany, itp.)
+                    # Akceptuj tylko jeśli Color zaczyna się od "RAL"
+                    if not color.lower().startswith('ral'):
+                        continue
+                    
                     # Parsuj wartości
                     dlg_szt = float(dlg_szt_cell.value or 0)
                     ilosc = int(ilosc_cell.value or 0)
@@ -118,7 +123,7 @@ class OkleinowanieCalculator:
                             color=color
                         )
                         self.profile.append(profil)
-                        print(f"✅ Załadowano: {nazwa} | DLG: {dlg_szt} | ILOSC: {ilosc} | COLOR: {color}")
+                        print(f"✅ Załadowano: {nazwa} | Długość: {dlg_szt} | Ilość: {ilosc} | Color: {color}")
                 
                 except (ValueError, TypeError, IndexError) as e:
                     print(f"⚠️ Wiersz {row_idx} - błąd parsowania: {str(e)}")
@@ -175,6 +180,13 @@ class OkleinowanieCalculator:
     def get_profiles(self) -> List[Profil]:
         """Zwróć listę profili"""
         return self.profile
+    
+    def get_profil_by_name(self, nazwa: str) -> Profil:
+        """Zwróć profil po nazwie"""
+        for profil in self.profile:
+            if profil.nazwa == nazwa:
+                return profil
+        return None
     
     def toggle_all(self, state: bool):
         """Zaznacz/odznacz wszystkie profile"""
