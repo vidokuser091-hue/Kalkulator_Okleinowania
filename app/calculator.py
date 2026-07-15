@@ -11,14 +11,14 @@ from dataclasses import dataclass, field
 class Profil:
     """Reprezentacja profilu okleinowania"""
     nazwa: str
-    dlg_szt: float  # długość w mm
-    ilosc: int      # ilość sztuk
+    dlg_szt: float  # długość w mm (już zsumowana po grupowaniu)
+    ilosc: int      # ilość sztuk (już zsumowana po grupowaniu)
     color: str      # np. "RAL 4R7021 MAT*STANDARD"
     wybrany: bool = True
     
     def get_mb(self) -> float:
-        """Oblicz metraż bieżący"""
-        return (self.dlg_szt / 1000) * self.ilosc
+        """Oblicz metraż bieżący - dlg_szt już zawiera sumę, nie mnożymy przez ilosc"""
+        return self.dlg_szt / 1000
     
     def calculate_price(self, kwota_okleinowania: float, dwustronne: bool = False, 
                        wspolczynnik: float = 1.0) -> float:
@@ -145,7 +145,7 @@ class OkleinowanieCalculator:
         for profil in self.profile:
             key = profil.nazwa
             if key in grouped:
-                # Sumuj metraż i ilość
+                # Sumuj długość i ilość
                 grouped[key].dlg_szt += profil.dlg_szt
                 grouped[key].ilosc += profil.ilosc
             else:
@@ -153,6 +153,8 @@ class OkleinowanieCalculator:
         
         self.profile = list(grouped.values())
         print(f"Po zgrupowaniu: {len(self.profile)} unikalnych profili")
+        for p in self.profile:
+            print(f"  - {p.nazwa}: {p.dlg_szt}mm (ilość: {p.ilosc})")
     
     def calculate_total(self, kwota_okleinowania: float, dwustronne: bool = False, 
                        wspolczynnik: float = 1.0) -> Tuple[float, Dict[str, float]]:
@@ -174,6 +176,7 @@ class OkleinowanieCalculator:
             if cena > 0:
                 ceny_profili[profil.nazwa] = cena
                 total += cena
+                print(f"  {profil.nazwa}: {profil.get_mb():.2f}mb × {kwota_okleinowania}zł = {cena:.2f}zł")
         
         return total, ceny_profili
     
