@@ -13,6 +13,7 @@ class Profil:
     nazwa: str
     dlg_szt: float  # długość w mm
     ilosc: int      # ilość sztuk
+    color: str      # np. "RAL 4R7021 MAT*STANDARD"
     wybrany: bool = True
     
     def get_mb(self) -> float:
@@ -68,50 +69,65 @@ class OkleinowanieCalculator:
                 ws = wb[sheet_name]
             
             self.profile = []
-            headers = {}
             
             # Przeszukaj pierwszy wiersz w poszukiwaniu nagłówków
+            headers = {}
             for col_idx, cell in enumerate(ws[1], 1):
                 if cell.value:
                     headers[cell.value.strip().lower()] = col_idx
             
+            print(f"Znalezione nagłówki: {list(headers.keys())}")
+            
             # Szukaj wymaganych kolumn
-            required_keys = ['dlg_szt', 'ilosc']
-            if not all(key in headers for key in required_keys):
-                raise ValueError(f"Plik musi zawierać kolumny: {', '.join(required_keys)}")
+            required_keys = ['dlg_szt', 'ilosc', 'nazwa']
+            missing_keys = [key for key in required_keys if key not in headers]
+            if missing_keys:
+                raise ValueError(f"Plik musi zawierać kolumny: {', '.join(missing_keys)}")
+            
+            # Kolumna Color (jeśli istnieje)
+            color_col_idx = headers.get('color', None)
             
             # Przeszukaj wiersze z danymi
-            for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=False), 2):
-                # Pobierz wartości
-                row_values = [cell.value for cell in row]
-                
-                # Znajdź kolumnę z nazwą (zwykle pierwsza albo szukaj "nazwa", "profil", "name" itp.)
-                nazwa = None
-                for col_idx, cell in enumerate(row, 1):
-                    if cell.value and isinstance(cell.value, str):
-                        if col_idx == 1 or any(keyword in str(headers).lower() for keyword in ['nazwa', 'profil', 'name']):
-                            nazwa = str(cell.value).strip()
-                            break
-                
-                if not nazwa:
-                    continue
-                
-                # Sprawdź czy zawiera "RAL"
-                if 'ral' not in nazwa.lower():
-                    continue
-                
+            for row_idx, row in enumerate(ws.iter_rows(min_row=2, max_row=ws.max_row, values_only=False), 2):
                 try:
-                    dlg_szt = float(row[headers['dlg_szt'] - 1].value or 0)
-                    ilosc = int(row[headers['ilosc'] - 1].value or 0)
+                    # Pobierz wartości z właściwych kolumn
+                    nazwa_cell = row[headers['nazwa'] - 1]
+                    dlg_szt_cell = row[headers['dlg_szt'] - 1]
+                    ilosc_cell = row[headers['ilosc'] - 1]
+                    color_cell = row[color_col_idx - 1] if color_col_idx else None
+                    
+                    nazwa = str(nazwa_cell.value).strip() if nazwa_cell.value else None
+                    color = str(color_cell.value).strip() if color_cell and color_cell.value else ""
+                    
+                    if not nazwa:
+                        continue
+                    
+                    # Sprawdź czy zawiera "RAL" w kolumnie Color
+                    if 'ral' not in color.lower():
+                        continue
+                    
+                    # Parsuj wartości
+                    dlg_szt = float(dlg_szt_cell.value or 0)
+                    ilosc = int(ilosc_cell.value or 0)
                     
                     if dlg_szt > 0 and ilosc > 0:
-                        self.profile.append(Profil(nazwa=nazwa, dlg_szt=dlg_szt, ilosc=ilosc))
-                except (ValueError, TypeError, IndexError):
+                        profil = Profil(
+                            nazwa=nazwa,
+                            dlg_szt=dlg_szt,
+                            ilosc=ilosc,
+                            color=color
+                        )
+                        self.profile.append(profil)
+                        print(f"✅ Załadowano: {nazwa} | DLG: {dlg_szt} | ILOSC: {ilosc} | COLOR: {color}")
+                
+                except (ValueError, TypeError, IndexError) as e:
+                    print(f"⚠️ Wiersz {row_idx} - błąd parsowania: {str(e)}")
                     continue
             
             # Grupuj profile o tej samej nazwie
             self._group_profiles()
             
+            print(f"\n✅ Załadowano {len(self.profile)} profili z oznaczeniem RAL")
             return len(self.profile) > 0
         
         except Exception as e:
@@ -122,14 +138,16 @@ class OkleinowanieCalculator:
         grouped: Dict[str, Profil] = {}
         
         for profil in self.profile:
-            if profil.nazwa in grouped:
+            key = profil.nazwa
+            if key in grouped:
                 # Sumuj metraż i ilość
-                grouped[profil.nazwa].dlg_szt += profil.dlg_szt
-                grouped[profil.nazwa].ilosc += profil.ilosc
+                grouped[key].dlg_szt += profil.dlg_szt
+                grouped[key].ilosc += profil.ilosc
             else:
-                grouped[profil.nazwa] = profil
+                grouped[key] = profil
         
         self.profile = list(grouped.values())
+        print(f"Po zgrupowaniu: {len(self.profile)} unikalnych profili")
     
     def calculate_total(self, kwota_okleinowania: float, dwustronne: bool = False, 
                        wspolczynnik: float = 1.0) -> Tuple[float, Dict[str, float]]:
