@@ -21,6 +21,7 @@ class CalculatorUI:
         
         self.calculator = OkleinowanieCalculator()
         self.current_file = None
+        self.item_to_profil = {}  # Mapowanie item_id -> nazwa profilu
         
         # Style
         style = ttk.Style()
@@ -75,7 +76,7 @@ class CalculatorUI:
         
         ttk.Button(button_frame, text="✓ Zaznacz wszystko", command=self._select_all).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="✗ Odznacz wszystko", command=self._deselect_all).pack(side=tk.LEFT, padx=5)
-        ttk.Label(button_frame, text="(Kliknij w kolumnę 'Wybór' aby zaznaczać/odznaczać profil)", foreground="gray", font=("Arial", 9, "italic")).pack(side=tk.LEFT, padx=20)
+        ttk.Label(button_frame, text="(Kliknij na checkbox aby wybrać profil)", foreground="gray", font=("Arial", 9, "italic")).pack(side=tk.LEFT, padx=20)
         
         # Tabelka z profilami
         columns = ("Wybór", "Profil", "Długość (mm)", "Ilość", "mb", "Cena (zł)")
@@ -149,18 +150,21 @@ class CalculatorUI:
         for item in self.tree.get_children():
             self.tree.delete(item)
         
+        self.item_to_profil = {}
+        
         # Dodaj profile
         for profil in self.calculator.get_profiles():
             mb = profil.get_mb()
-            status = "☑ BĘDZIE" if profil.wybrany else "☐ SKIP"
-            self.tree.insert('', 'end', values=(
-                status,
+            checkbox_text = "☑" if profil.wybrany else "☐"
+            item_id = self.tree.insert('', 'end', values=(
+                checkbox_text,
                 profil.nazwa,
                 f"{profil.dlg_szt:.0f}",
                 profil.ilosc,
                 f"{mb:.2f}",
                 "0.00"
-            ), tags=('selected' if profil.wybrany else 'deselected',))
+            ))
+            self.item_to_profil[item_id] = profil.nazwa
     
     def _on_tree_click(self, event):
         """Obsłuż klik na wiersz tabeli"""
@@ -170,18 +174,16 @@ class CalculatorUI:
         if not item:
             return
         
-        # Jeśli kliknięto na kolumnę "Wybór" (#1) lub na wiersz ogólnie
-        if col == '#1' or col == '#2':  # Kolumna "Wybór" lub "Profil"
+        # Tylko jeśli kliknięto na kolumnę "Wybór" (#1)
+        if col == '#1':
             try:
-                # Pobierz wartości z wiersza
-                row_values = self.tree.item(item, 'values')
-                if row_values:
-                    profil_name = row_values[1]  # Nazwa profilu
+                if item in self.item_to_profil:
+                    profil_name = self.item_to_profil[item]
                     profil = self.calculator.get_profil_by_name(profil_name)
                     if profil:
                         # Przełącz stan
                         profil.wybrany = not profil.wybrany
-                        print(f"Profil '{profil_name}' - {'ZAZNACZONY' if profil.wybrany else 'ODZNACZONY'}")
+                        print(f"✓ Profil '{profil_name}' - {'ZAZNACZONY (BĘDZIE OKLEJANY)' if profil.wybrany else 'ODZNACZONY (POMINIĘTY)'}")
                         self._refresh_profiles_table()
             except Exception as e:
                 print(f"Błąd: {e}")
@@ -190,13 +192,13 @@ class CalculatorUI:
         """Zaznacz wszystkie profile"""
         self.calculator.toggle_all(True)
         self._refresh_profiles_table()
-        print("✓ Wszystkie profile zaznaczone")
+        print("✓ Wszystkie profile zaznaczone - BĘDĄ OKLEJANE")
     
     def _deselect_all(self):
         """Odznacz wszystkie profile"""
         self.calculator.toggle_all(False)
         self._refresh_profiles_table()
-        print("✗ Wszystkie profile odznaczone")
+        print("✗ Wszystkie profile odznaczone - BĘDĄ POMINIĘTE")
     
     def _on_dwustronne_changed(self):
         """Zmień stan dostępności współczynnika"""
@@ -232,7 +234,8 @@ class CalculatorUI:
             
             # Pokaż info ile profili obliczono
             zaznaczonych = sum(1 for p in self.calculator.get_profiles() if p.wybrany)
-            print(f"\n✅ Obliczono {zaznaczonych} profili (łączna cena: {total:.2f} zł)")
+            print(f"\n✅ OBLICZONO: {zaznaczonych} profili do okleinowania")
+            print(f"💰 Cena całkowita: {total:.2f} zł\n")
         
         except ValueError:
             messagebox.showerror("Błąd", "Sprawdź czy wszystkie wartości są liczbami.")
@@ -248,3 +251,4 @@ class CalculatorUI:
         self.file_label.config(text="Brak wczytanego pliku", foreground="gray")
         self.current_file = None
         self.calculator = OkleinowanieCalculator()
+        self.item_to_profil = {}
