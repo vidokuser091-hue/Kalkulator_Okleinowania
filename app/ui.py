@@ -78,10 +78,9 @@ class CalculatorUI:
         
         # Tabelka z profilami
         columns = ("Wybór", "Nazwa", "DLG_SZT (mm)", "ILOSC", "mb", "Cena (zł)")
-        self.tree = ttk.Treeview(profiles_frame, columns=columns, height=15, show='tree headings')
+        self.tree = ttk.Treeview(profiles_frame, columns=columns, height=15, show='headings')
         
         # Definiuj kolumny
-        self.tree.column('#0', width=0, stretch=tk.NO)
         self.tree.column('Wybór', width=50, anchor=tk.CENTER)
         self.tree.column('Nazwa', width=250, anchor=tk.W)
         self.tree.column('DLG_SZT (mm)', width=100, anchor=tk.CENTER)
@@ -149,7 +148,7 @@ class CalculatorUI:
         # Dodaj profile
         for profil in self.calculator.get_profiles():
             mb = profil.get_mb()
-            item_id = self.tree.insert('', 'end', values=(
+            self.tree.insert('', 'end', values=(
                 '✓' if profil.wybrany else '✗',
                 profil.nazwa,
                 f"{profil.dlg_szt:.0f}",
@@ -157,8 +156,6 @@ class CalculatorUI:
                 f"{mb:.2f}",
                 "0.00"
             ))
-            # Przypisz ID profilu do wiersza
-            self.tree.set(item_id, '#0', profil.nazwa)
         
         # Bind click do checkboxa
         self.tree.bind('<Button-1>', self._on_tree_click)
