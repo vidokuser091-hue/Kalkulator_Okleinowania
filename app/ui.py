@@ -16,11 +16,12 @@ class CalculatorUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Kalkulator Okleinowania")
-        self.root.geometry("1000x700")
+        self.root.geometry("1100x750")
         self.root.resizable(True, True)
         
         self.calculator = OkleinowanieCalculator()
         self.current_file = None
+        self.profil_checkboxes = {}  # Dictionary do przechowywania checkboxów profili
         
         # Style
         style = ttk.Style()
@@ -71,20 +72,20 @@ class CalculatorUI:
         
         # Przycisk zaznacz/odznacz wszystko
         button_frame = ttk.Frame(profiles_frame)
-        button_frame.grid(row=0, column=0, columnspan=4, sticky=(tk.W, tk.E), pady=5)
+        button_frame.grid(row=0, column=0, columnspan=7, sticky=(tk.W, tk.E), pady=5)
         
         ttk.Button(button_frame, text="✓ Zaznacz wszystko", command=self._select_all).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="✗ Odznacz wszystko", command=self._deselect_all).pack(side=tk.LEFT, padx=5)
         
         # Tabelka z profilami
-        columns = ("Wybór", "Nazwa", "DLG_SZT (mm)", "ILOSC", "mb", "Cena (zł)")
+        columns = ("Wybór", "Profil", "Długość (mm)", "Ilość", "mb", "Cena (zł)")
         self.tree = ttk.Treeview(profiles_frame, columns=columns, height=15, show='headings')
         
         # Definiuj kolumny
-        self.tree.column('Wybór', width=50, anchor=tk.CENTER)
-        self.tree.column('Nazwa', width=250, anchor=tk.W)
-        self.tree.column('DLG_SZT (mm)', width=100, anchor=tk.CENTER)
-        self.tree.column('ILOSC', width=80, anchor=tk.CENTER)
+        self.tree.column('Wybór', width=60, anchor=tk.CENTER)
+        self.tree.column('Profil', width=280, anchor=tk.W)
+        self.tree.column('Długość (mm)', width=110, anchor=tk.CENTER)
+        self.tree.column('Ilość', width=70, anchor=tk.CENTER)
         self.tree.column('mb', width=80, anchor=tk.CENTER)
         self.tree.column('Cena (zł)', width=100, anchor=tk.CENTER)
         
@@ -92,12 +93,15 @@ class CalculatorUI:
         for col in columns:
             self.tree.heading(col, text=col)
         
-        self.tree.grid(row=1, column=0, columnspan=4, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        self.tree.grid(row=1, column=0, columnspan=7, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
         
         # Scrollbar
         scrollbar = ttk.Scrollbar(profiles_frame, orient=tk.VERTICAL, command=self.tree.yview)
-        scrollbar.grid(row=1, column=4, sticky=(tk.N, tk.S))
+        scrollbar.grid(row=1, column=7, sticky=(tk.N, tk.S))
         self.tree.configure(yscroll=scrollbar.set)
+        
+        # Bind click do checkboxa
+        self.tree.bind('<Button-1>', self._on_tree_click)
         
         # ========== SEKCJA WYNIKÓW ==========
         results_frame = ttk.LabelFrame(main_frame, text="Podsumowanie", padding="10")
@@ -145,39 +149,38 @@ class CalculatorUI:
         for item in self.tree.get_children():
             self.tree.delete(item)
         
+        self.profil_checkboxes = {}
+        
         # Dodaj profile
         for profil in self.calculator.get_profiles():
             mb = profil.get_mb()
-            self.tree.insert('', 'end', values=(
-                '✓' if profil.wybrany else '✗',
+            item_id = self.tree.insert('', 'end', values=(
+                '☐' if not profil.wybrany else '☑',  # Checkbox symbole
                 profil.nazwa,
                 f"{profil.dlg_szt:.0f}",
                 profil.ilosc,
                 f"{mb:.2f}",
                 "0.00"
             ))
-        
-        # Bind click do checkboxa
-        self.tree.bind('<Button-1>', self._on_tree_click)
+            # Przypisz do słownika
+            self.profil_checkboxes[item_id] = profil.nazwa
     
     def _on_tree_click(self, event):
-        """Obsłuż klik na checkbox w tabeli"""
+        """Obsłuż klik na wiersz tabeli"""
         item = self.tree.identify('item', event.x, event.y)
         col = self.tree.identify_column(event.x, event.y)
         
-        if col == '#1':  # Kolumna "Wybór"
+        if item and col == '#1':  # Kolumna "Wybór"
             try:
-                # Pobierz profil na podstawie nazwy
-                row_values = self.tree.item(item, 'values')
-                if row_values:
-                    profil_name = row_values[1]
-                    for profil in self.calculator.get_profiles():
-                        if profil.nazwa == profil_name:
-                            profil.wybrany = not profil.wybrany
-                            break
-                    self._refresh_profiles_table()
-            except:
-                pass
+                # Pobierz profil na podstawie ID wiersza
+                if item in self.profil_checkboxes:
+                    profil_name = self.profil_checkboxes[item]
+                    profil = self.calculator.get_profil_by_name(profil_name)
+                    if profil:
+                        profil.wybrany = not profil.wybrany
+                        self._refresh_profiles_table()
+            except Exception as e:
+                print(f"Błąd: {e}")
     
     def _select_all(self):
         """Zaznacz wszystkie profile"""
