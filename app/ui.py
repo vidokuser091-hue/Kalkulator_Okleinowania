@@ -21,7 +21,6 @@ class CalculatorUI:
         
         self.calculator = OkleinowanieCalculator()
         self.current_file = None
-        self.profil_checkboxes = {}  # Dictionary do przechowywania checkboxów profili
         
         # Style
         style = ttk.Style()
@@ -67,7 +66,7 @@ class CalculatorUI:
         self.wspolczynnik_spinbox.grid(row=2, column=1, sticky=tk.W, padx=5)
         
         # ========== SEKCJA PROFILI ==========
-        profiles_frame = ttk.LabelFrame(main_frame, text="Profile", padding="10")
+        profiles_frame = ttk.LabelFrame(main_frame, text="Profile do okleinowania", padding="10")
         profiles_frame.grid(row=2, column=0, columnspan=4, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
         
         # Przycisk zaznacz/odznacz wszystko
@@ -76,6 +75,7 @@ class CalculatorUI:
         
         ttk.Button(button_frame, text="✓ Zaznacz wszystko", command=self._select_all).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="✗ Odznacz wszystko", command=self._deselect_all).pack(side=tk.LEFT, padx=5)
+        ttk.Label(button_frame, text="(Kliknij w kolumnę 'Wybór' aby zaznaczać/odznaczać profil)", foreground="gray", font=("Arial", 9, "italic")).pack(side=tk.LEFT, padx=20)
         
         # Tabelka z profilami
         columns = ("Wybór", "Profil", "Długość (mm)", "Ilość", "mb", "Cena (zł)")
@@ -100,7 +100,7 @@ class CalculatorUI:
         scrollbar.grid(row=1, column=7, sticky=(tk.N, tk.S))
         self.tree.configure(yscroll=scrollbar.set)
         
-        # Bind click do checkboxa
+        # Bind click do zaznaczania
         self.tree.bind('<Button-1>', self._on_tree_click)
         
         # ========== SEKCJA WYNIKÓW ==========
@@ -149,35 +149,39 @@ class CalculatorUI:
         for item in self.tree.get_children():
             self.tree.delete(item)
         
-        self.profil_checkboxes = {}
-        
         # Dodaj profile
         for profil in self.calculator.get_profiles():
             mb = profil.get_mb()
-            item_id = self.tree.insert('', 'end', values=(
-                '☐' if not profil.wybrany else '☑',  # Checkbox symbole
+            status = "☑ BĘDZIE" if profil.wybrany else "☐ SKIP"
+            self.tree.insert('', 'end', values=(
+                status,
                 profil.nazwa,
                 f"{profil.dlg_szt:.0f}",
                 profil.ilosc,
                 f"{mb:.2f}",
                 "0.00"
-            ))
-            # Przypisz do słownika
-            self.profil_checkboxes[item_id] = profil.nazwa
+            ), tags=('selected' if profil.wybrany else 'deselected',))
     
     def _on_tree_click(self, event):
         """Obsłuż klik na wiersz tabeli"""
         item = self.tree.identify('item', event.x, event.y)
         col = self.tree.identify_column(event.x, event.y)
         
-        if item and col == '#1':  # Kolumna "Wybór"
+        if not item:
+            return
+        
+        # Jeśli kliknięto na kolumnę "Wybór" (#1) lub na wiersz ogólnie
+        if col == '#1' or col == '#2':  # Kolumna "Wybór" lub "Profil"
             try:
-                # Pobierz profil na podstawie ID wiersza
-                if item in self.profil_checkboxes:
-                    profil_name = self.profil_checkboxes[item]
+                # Pobierz wartości z wiersza
+                row_values = self.tree.item(item, 'values')
+                if row_values:
+                    profil_name = row_values[1]  # Nazwa profilu
                     profil = self.calculator.get_profil_by_name(profil_name)
                     if profil:
+                        # Przełącz stan
                         profil.wybrany = not profil.wybrany
+                        print(f"Profil '{profil_name}' - {'ZAZNACZONY' if profil.wybrany else 'ODZNACZONY'}")
                         self._refresh_profiles_table()
             except Exception as e:
                 print(f"Błąd: {e}")
@@ -186,11 +190,13 @@ class CalculatorUI:
         """Zaznacz wszystkie profile"""
         self.calculator.toggle_all(True)
         self._refresh_profiles_table()
+        print("✓ Wszystkie profile zaznaczone")
     
     def _deselect_all(self):
         """Odznacz wszystkie profile"""
         self.calculator.toggle_all(False)
         self._refresh_profiles_table()
+        print("✗ Wszystkie profile odznaczone")
     
     def _on_dwustronne_changed(self):
         """Zmień stan dostępności współczynnika"""
@@ -214,16 +220,19 @@ class CalculatorUI:
             
             # Aktualizuj tabelę z cenami
             for item in self.tree.get_children():
-                row_values = self.tree.item(item, 'values')
+                row_values = list(self.tree.item(item, 'values'))
                 if row_values:
                     profil_name = row_values[1]
                     if profil_name in ceny_profili:
-                        row_values = list(row_values)
                         row_values[5] = f"{ceny_profili[profil_name]:.2f}"
                         self.tree.item(item, values=row_values)
             
             # Aktualizuj cenę całkowitą
             self.total_label.config(text=f"{total:.2f} zł")
+            
+            # Pokaż info ile profili obliczono
+            zaznaczonych = sum(1 for p in self.calculator.get_profiles() if p.wybrany)
+            print(f"\n✅ Obliczono {zaznaczonych} profili (łączna cena: {total:.2f} zł)")
         
         except ValueError:
             messagebox.showerror("Błąd", "Sprawdź czy wszystkie wartości są liczbami.")
