@@ -1,0 +1,1 @@
+"""Aplikacja Kalkulator Okleinowania"""
